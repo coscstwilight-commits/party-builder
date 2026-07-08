@@ -19,7 +19,11 @@
     .primary { background:#2563eb; color:white; }
     .delete { background:#ef4444; color:white; }
     .edit { background:#eab308; color:black; }
-    .analysis { margin:20px 0; padding:15px; background:#fef3c7; border-radius:8px; line-height:1.6; }
+    .popup { 
+      position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); 
+      background:white; padding:20px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.3); 
+      max-width:90%; z-index:1000; max-height:80%; overflow:auto;
+    }
   </style>
 </head>
 <body>
@@ -47,7 +51,7 @@
     <tbody></tbody>
   </table>
 
-  <h2>保存済み候補（Ctrl+クリックで複数選択）</h2>
+  <h2>保存済み候補（Ctrl+クリックで複数選択・最大6）</h2>
   <select id="candidateSelect" multiple size="10" style="width:100%; max-width:900px;"></select><br>
   <button class="primary" onclick="showComparison()" style="padding:12px 30px;">横並び比較</button>
 
@@ -57,6 +61,8 @@
     <thead><tr id="compareHeader"></tr></thead>
     <tbody id="compareBody"></tbody>
   </table>
+
+  <div id="popup" class="popup" style="display:none;"></div>
 
   <script>
     let upperList = [];
@@ -214,7 +220,8 @@
     function showComparison() {
       const select = document.getElementById('candidateSelect');
       const selected = Array.from(select.selectedOptions).map(o => o.value);
-      if (selected.length === 0) return alert("比較したい候補をCtrl+クリックで選択してください");
+      if (selected.length === 0) return alert("比較したい候補を選択してください");
+      if (selected.length > 6) return alert("最大6匹までです");
 
       const savedData = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
       const header = document.getElementById('compareHeader');
@@ -247,14 +254,6 @@
         });
         body.appendChild(tr);
       });
-
-      // 分析
-      let analysisHTML = '<strong>分析結果:</strong><br>';
-      selected.forEach((name, i) => {
-        analysisHTML += `${name}: ${coverage[i]}体カバー<br>`;
-      });
-      document.getElementById('analysis').innerHTML = analysisHTML;
-      document.getElementById('analysis').style.display = 'block';
 
       document.getElementById('compareTable').style.display = 'table';
     }
