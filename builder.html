@@ -19,7 +19,7 @@
     .primary { background:#2563eb; color:white; }
     .delete { background:#ef4444; color:white; }
     .edit { background:#eab308; color:black; }
-    .analysis { margin:20px 0; padding:15px; background:#fef3c7; border-radius:8px; line-height:1.6; }
+    input[type="file"] { display:none; }
   </style>
 </head>
 <body>
@@ -51,11 +51,10 @@
   <select id="candidateSelect" multiple size="10" style="width:100%; max-width:900px;"></select><br>
   <button class="primary" onclick="showComparison()" style="padding:12px 30px;">横並び比較</button>
 
-  <div id="analysis" class="analysis" style="display:none;"></div>
-
-  <h2>上位ポケモンから候補検索</h2>
-  <select id="upperSelect" multiple size="8" style="width:100%; max-width:900px;"></select><br>
-  <button class="primary" onclick="searchByUpper()">この上位ポケモンたちに強い候補を探す</button>
+  <h2>データ管理</h2>
+  <button class="primary" onclick="exportCSV()">📤 CSVエクスポート</button>
+  <button class="primary" onclick="document.getElementById('importFile').click()">📥 CSVインポート</button>
+  <input type="file" id="importFile" accept=".csv" style="display:none;" onchange="importCSV(event)">
 
   <table id="compareTable" style="display:none; margin-top:20px;">
     <thead><tr id="compareHeader"></tr></thead>
@@ -171,11 +170,15 @@
     function saveCandidate() {
       const name = document.getElementById('candName').value.trim();
       if (!name) return alert("候補名を入力してください");
+      saveToStorage(name);
+    }
+
+    function saveToStorage(name) {
       let saved = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
       saved[name] = currentChecks.slice();
       localStorage.setItem('teamCandidates', JSON.stringify(saved));
       updateSelect();
-      alert(`「${name}」を保存しました`);
+      alert(`「${name}」を保存/更新しました`);
     }
 
     function overwriteSelected() {
@@ -183,11 +186,7 @@
       const name = select.value;
       if (!name) return alert("上書きしたい候補を選択してください");
       if (confirm(`「${name}」を上書きしますか？`)) {
-        let saved = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
-        saved[name] = currentChecks.slice();
-        localStorage.setItem('teamCandidates', JSON.stringify(saved));
-        updateSelect();
-        alert(`「${name}」を上書きしました`);
+        saveToStorage(name);
       }
     }
 
@@ -249,26 +248,39 @@
       document.getElementById('compareTable').style.display = 'table';
     }
 
-    function searchByUpper() {
-      const upperSelect = document.getElementById('upperSelect');
-      const selectedUpper = Array.from(upperSelect.selectedOptions).map(o => parseInt(o.value));
-      if (selectedUpper.length === 0) return alert("上位ポケモンを選択してください");
-
-      const savedData = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
-      let bestCandidate = {name: '', count: 0};
-
-      Object.keys(savedData).forEach(name => {
-        let count = 0;
-        selectedUpper.forEach(idx => {
-          if (savedData[name][idx]) count++;
-        });
-        if (count > bestCandidate.count) bestCandidate = {name, count};
+    function exportCSV() {
+      const saved = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
+      let csv = "候補名," + upperList.join(",") + "\n";
+      Object.keys(saved).forEach(name => {
+        csv += name + "," + saved[name].join(",") + "\n";
       });
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'pokemon_candidates.csv';
+      a.click();
+    }
 
-      let result = `<strong>選択した上位ポケモン(${selectedUpper.length}体)に対して最も対応できる候補:</strong><br>`;
-      result += bestCandidate.name ? `${bestCandidate.name} (${bestCandidate.count}体)` : '該当なし';
-      document.getElementById('analysis').innerHTML = result;
-      document.getElementById('analysis').style.display = 'block';
+    function importCSV(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const text = e.target.result;
+        const lines = text.trim().split('\n');
+        const headers = lines[0].split(',');
+        let saved = {};
+        for (let i = 1; i < lines.length; i++) {
+          const values = lines[i].split(',');
+          const name = values[0];
+          saved[name] = values.slice(1).map(v => v === 'true');
+        }
+        localStorage.setItem('teamCandidates', JSON.stringify(saved));
+        updateSelect();
+        alert("CSVをインポートしました");
+      };
+      reader.readAsText(file);
     }
 
     function clearCurrent() {
@@ -293,15 +305,6 @@
     document.getElementById('rankingInput').value = upperList.join('\n');
     renderCheckTable();
     updateSelect();
-
-    // 上位ポケモン選択リスト
-    const upperSelect = document.getElementById('upperSelect');
-    upperList.forEach((name, i) => {
-      const opt = document.createElement('option');
-      opt.value = i;
-      opt.textContent = `${i+1}. ${name}`;
-      upperSelect.appendChild(opt);
-    });
   </script>
 </body>
 </html>
