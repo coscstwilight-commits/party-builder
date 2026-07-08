@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ポケチャン パーティービルダー</title>
+  <title>ポケモン チーム構築支援</title>
   <style>
     body { font-family: 'Segoe UI', sans-serif; margin:20px; background:#f8fafc; }
     h1 { text-align:center; }
@@ -65,11 +65,10 @@
     .dialog-title { font-size:18px; font-weight:700; }
     .dialog-close { background:#e2e8f0; color:#0f172a; }
     .modal-list { margin-top:12px; line-height:1.7; white-space:pre-wrap; }
-    .modal-section { margin-top:14px; }
   </style>
 </head>
 <body>
-  <h1>ポケチャン パーティービルダー</h1>
+  <h1>ポケモン チーム構築支援</h1>
 
   <div class="panel">
     <h2>ランキング更新（必要時）</h2>
@@ -111,10 +110,18 @@
   </div>
 
   <div class="panel">
-    <h2>保存済み候補（クリックで呼び出し）</h2>
-    <div class="small">候補をクリックすると、チェック状況とタグが編集欄に復元されます。</div>
+    <h2>保存済み候補（呼び出し用）</h2>
+    <div class="small">候補を選ぶと、チェック状況とタグが編集欄に復元されます。</div>
     <div class="select-wrap">
       <select id="candidateSelect" size="10" style="width:100%; max-width:900px;" onchange="loadCandidateToEditor()"></select>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>横並び比較用の候補選択</h2>
+    <div class="small">Ctrl / Shift で複数選択できます。ここで選んだ候補を横並び比較します。</div>
+    <div class="select-wrap">
+      <select id="compareCandidateSelect" multiple size="10" style="width:100%; max-width:900px;" onchange="rememberCompareSelection()"></select>
     </div><br>
     <button type="button" class="primary" onclick="showComparison()" style="padding:12px 30px;">横並び比較</button>
   </div>
@@ -184,6 +191,7 @@
     let savedTagLibrary = [];
     let candidateTagSelection = new Set();
     let lastCompared = [];
+    let compareSelectionBackup = [];
 
     const defaultRanking = `ガブリアス
 ミミッキュ
@@ -345,6 +353,7 @@
 
     function renderFilterTagButtons() {
       const area = document.getElementById('filterTagArea');
+      if (!area) return;
       area.innerHTML = '';
       savedTagLibrary.forEach(tag => {
         const btn = document.createElement('button');
@@ -389,11 +398,9 @@
       const select = document.getElementById('candidateSelect');
       const name = select.value;
       if (!name) return;
-
       const saved = getSavedCandidates();
       const data = saved[name];
       if (!data) return;
-
       document.getElementById('candName').value = name;
       currentChecks = (data.checks || []).slice();
       candidateTagSelection = new Set(data.tags || []);
@@ -413,47 +420,42 @@
 
     function saveToStorage(name) {
       const saved = getSavedCandidates();
-      saved[name] = {
-        checks: currentChecks.slice(),
-        tags: getSelectedCandidateTags()
-      };
+      saved[name] = { checks: currentChecks.slice(), tags: getSelectedCandidateTags() };
       saveCandidates(saved);
       updateSelect();
+      updateCompareSelect();
       alert(`「${name}」を保存/更新しました`);
     }
 
     function saveAsNewCandidate() {
       const name = document.getElementById('candName').value.trim();
       if (!name) return alert('候補名を入力してください');
-      const saved = getSavedCandidates();
-      if (saved[name]) {
-        const newName = prompt('別名で保存する新しい候補名を入力してください', `${name}_copy`);
-        if (!newName) return;
-        const trimmed = newName.trim();
-        if (!trimmed) return;
-        saveToStorage(trimmed);
-      } else {
-        saveToStorage(name);
+      const newName = prompt('別名で保存する新しい候補名を入力してください', `${name}_copy`);
+      if (!newName) return;
+      const trimmed = newName.trim();
+      if (!trimmed) return;
+      if (getSavedCandidates()[trimmed]) {
+        if (!confirm('同名が存在します。上書きしますか？')) return;
       }
+      saveToStorage(trimmed);
     }
 
     function overwriteSelected() {
-      const select = document.getElementById('candidateSelect');
-      const name = select.value;
+      const name = document.getElementById('candidateSelect').value;
       if (!name) return alert('上書きしたい候補を選択してください');
       loadCandidateToEditor();
       saveToStorage(name);
     }
 
     function deleteSelected() {
-      const select = document.getElementById('candidateSelect');
-      const name = select.value;
+      const name = document.getElementById('candidateSelect').value;
       if (!name) return alert('削除する候補を選択してください');
       if (!confirm(`「${name}」を削除しますか？`)) return;
       const saved = getSavedCandidates();
       delete saved[name];
       saveCandidates(saved);
       updateSelect();
+      updateCompareSelect();
       alert('削除しました');
     }
 
@@ -470,6 +472,27 @@
         select.appendChild(opt);
       });
       applyCandidateFilter();
+    }
+
+    function updateCompareSelect() {
+      const select = document.getElementById('compareCandidateSelect');
+      if (!select) return;
+      const saved = getSavedCandidates();
+      const prev = new Set(compareSelectionBackup);
+      select.innerHTML = '';
+      Object.keys(saved).sort().forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        const tags = (saved[name].tags || []).join(' / ');
+        opt.textContent = tags ? `${name} [${tags}]` : name;
+        if (prev.has(name)) opt.selected = true;
+        select.appendChild(opt);
+      });
+    }
+
+    function rememberCompareSelection() {
+      const select = document.getElementById('compareCandidateSelect');
+      compareSelectionBackup = Array.from(select.selectedOptions).map(o => o.value);
     }
 
     function getActiveRoleFilters() {
@@ -489,8 +512,7 @@
       const saved = getSavedCandidates();
       Array.from(select.options).forEach(opt => {
         const tags = saved[opt.value]?.tags || [];
-        const visible = filters.length === 0 || filters.every(f => tags.includes(f));
-        opt.hidden = !visible;
+        opt.hidden = !(filters.length === 0 || filters.every(f => tags.includes(f)));
       });
     }
 
@@ -500,14 +522,12 @@
     }
 
     function getVisibleSelectedCandidateNames() {
-      const select = document.getElementById('candidateSelect');
-      return Array.from(select.selectedOptions)
-        .map(o => o.value)
-        .filter(name => !select.querySelector(`option[value="${CSS.escape(name)}"]`)?.hidden)
-        .slice(0, 6);
+      const select = document.getElementById('compareCandidateSelect');
+      return Array.from(select.selectedOptions).map(o => o.value).filter(name => !select.querySelector(`option[value="${CSS.escape(name)}"]`)?.hidden).slice(0, 6);
     }
 
     function showComparison() {
+      rememberCompareSelection();
       const selected = getVisibleSelectedCandidateNames();
       if (selected.length === 0) return alert('比較したい候補を選択してください');
       lastCompared = selected.slice();
@@ -542,8 +562,7 @@
     }
 
     function showBestCandidates() {
-      const upperSelect = document.getElementById('upperPokemonSelect');
-      const selected = Array.from(upperSelect.selectedOptions).map(o => o.value);
+      const selected = Array.from(document.getElementById('upperPokemonSelect').selectedOptions).map(o => o.value);
       if (selected.length === 0) return alert('上位ポケモンを選択してください');
 
       const savedData = getSavedCandidates();
@@ -571,86 +590,53 @@
       document.getElementById('uncoveredDialog').showModal();
     }
 
-    function closeUncoveredDialog() {
-      document.getElementById('uncoveredDialog').close();
-    }
+    function closeUncoveredDialog() { document.getElementById('uncoveredDialog').close(); }
 
     function showOverlapCandidates() {
       if (!lastCompared.length) return alert('先に横並び比較をしてください');
-
       const savedData = getSavedCandidates();
       const pairs = [];
-
       for (let i = 0; i < lastCompared.length; i++) {
         for (let j = i + 1; j < lastCompared.length; j++) {
-          const a = lastCompared[i];
-          const b = lastCompared[j];
+          const a = lastCompared[i], b = lastCompared[j];
           const checksA = savedData[a]?.checks || [];
           const checksB = savedData[b]?.checks || [];
-
           const overlappedPokes = [];
-          upperList.forEach((poke, idx) => {
-            if (checksA[idx] && checksB[idx]) overlappedPokes.push(poke);
-          });
-
+          upperList.forEach((poke, idx) => { if (checksA[idx] && checksB[idx]) overlappedPokes.push(poke); });
           pairs.push({ a, b, count: overlappedPokes.length, pokes: overlappedPokes });
         }
       }
-
       pairs.sort((x, y) => y.count - x.count || x.a.localeCompare(y.a, 'ja'));
-
       const body = document.getElementById('overlapDialogBody');
-      if (!pairs.length || pairs[0].count === 0) {
-        body.innerHTML = '6匹の中で、重複が多い組み合わせはありません。';
-      } else {
-        body.innerHTML = pairs
-          .filter(p => p.count > 0)
-          .map((p, i) => `${i + 1}. ${p.a} × ${p.b} — 重複 ${p.count}匹<br>${p.pokes.join(' / ')}`)
-          .join('<br><br>');
-      }
-
+      body.innerHTML = (!pairs.length || pairs[0].count === 0)
+        ? '6匹の中で、重複が多い組み合わせはありません。'
+        : pairs.filter(p => p.count > 0).map((p, i) => `${i + 1}. ${p.a} × ${p.b} — 重複 ${p.count}匹<br>${p.pokes.join(' / ')}`).join('<br><br>');
       document.getElementById('overlapDialog').showModal();
     }
 
-    function closeOverlapDialog() {
-      document.getElementById('overlapDialog').close();
-    }
+    function closeOverlapDialog() { document.getElementById('overlapDialog').close(); }
 
     function showUniqueRoleCounts() {
       if (!lastCompared.length) return alert('先に横並び比較をしてください');
-
       const savedData = getSavedCandidates();
       const uniqueCounts = lastCompared.map(name => ({ name, count: 0, pokes: [] }));
-
       upperList.forEach((poke, idx) => {
         const matched = lastCompared.filter(name => (savedData[name]?.checks || [])[idx]);
         if (matched.length === 1) {
           const onlyName = matched[0];
           const target = uniqueCounts.find(x => x.name === onlyName);
-          if (target) {
-            target.count++;
-            target.pokes.push(poke);
-          }
+          if (target) { target.count++; target.pokes.push(poke); }
         }
       });
-
       uniqueCounts.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ja'));
-
       const body = document.getElementById('uniqueDialogBody');
-      if (!uniqueCounts.length || uniqueCounts[0].count === 0) {
-        body.innerHTML = '固有で見れている上位ポケモンはありません。';
-      } else {
-        body.innerHTML = uniqueCounts
-          .map((x, i) => `${i + 1}. ${x.name} — 固有役割対象数 ${x.count}<br>${x.pokes.join(' / ')}`)
-          .join('<br><br>');
-      }
-
+      body.innerHTML = (!uniqueCounts.length || uniqueCounts[0].count === 0)
+        ? '固有で見れている上位ポケモンはありません。'
+        : uniqueCounts.map((x, i) => `${i + 1}. ${x.name} — 固有役割対象数 ${x.count}<br>${x.pokes.join(' / ')}`).join('<br><br>');
       document.getElementById('uniqueDialog').showModal();
     }
 
-    function closeUniqueDialog() {
-      document.getElementById('uniqueDialog').close();
-    }
+    function closeUniqueDialog() { document.getElementById('uniqueDialog').close(); }
 
     function exportCSV() {
       const saved = getSavedCandidates();
@@ -684,6 +670,7 @@
         }
         localStorage.setItem('teamCandidates', JSON.stringify(saved));
         updateSelect();
+        updateCompareSelect();
         alert('CSVをインポートしました');
       };
       reader.readAsText(file);
@@ -706,6 +693,7 @@
         renderCheckTable();
         renderUpperPokemonSelect();
         updateSelect();
+        updateCompareSelect();
         alert('ランキングを更新しました');
       }
     }
@@ -721,6 +709,7 @@
     renderUpperPokemonSelect();
     renderLibraryTags();
     updateSelect();
+    updateCompareSelect();
   </script>
 </body>
 </html>
