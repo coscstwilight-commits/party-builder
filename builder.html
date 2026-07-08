@@ -19,6 +19,7 @@
     .primary { background:#2563eb; color:white; }
     .delete { background:#ef4444; color:white; }
     .edit { background:#eab308; color:black; }
+    .ghost { background:#0f766e; color:white; }
     input[type="file"] { display:none; }
     .panel { background:white; padding:14px; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.08); margin-bottom:18px; }
     .small { font-size: 13px; color:#475569; }
@@ -92,6 +93,7 @@
     <div class="candidate-tag-line">下のタグを押して、この候補に付与します。保存済み候補を選ぶと復元されます。</div>
     <div id="candidateTagArea" class="tag-list"></div>
     <button type="button" class="primary" onclick="saveCandidate()">💾 保存 / 上書き</button>
+    <button type="button" class="ghost" onclick="saveAsNewCandidate()">📄 別名で保存</button>
     <button type="button" class="edit" onclick="overwriteSelected()">✏️ 選択中を上書き</button>
     <button type="button" class="delete" onclick="deleteSelected()">🗑 選択中を削除</button>
     <button type="button" onclick="clearCurrent()">クリア</button>
@@ -182,7 +184,6 @@
     let savedTagLibrary = [];
     let candidateTagSelection = new Set();
     let lastCompared = [];
-    let editingCandidateName = '';
 
     const defaultRanking = `ガブリアス
 ミミッキュ
@@ -384,11 +385,6 @@
       renderCandidateTagButtons();
     }
 
-    function syncEditorFromCurrentState() {
-      renderCheckTable();
-      renderCandidateTagButtons();
-    }
-
     function loadCandidateToEditor() {
       const select = document.getElementById('candidateSelect');
       const name = select.value;
@@ -398,11 +394,11 @@
       const data = saved[name];
       if (!data) return;
 
-      editingCandidateName = name;
       document.getElementById('candName').value = name;
       currentChecks = (data.checks || []).slice();
       candidateTagSelection = new Set(data.tags || []);
-      syncEditorFromCurrentState();
+      renderCheckTable();
+      renderCandidateTagButtons();
     }
 
     function getSelectedCandidateTags() {
@@ -422,9 +418,23 @@
         tags: getSelectedCandidateTags()
       };
       saveCandidates(saved);
-      editingCandidateName = name;
       updateSelect();
       alert(`「${name}」を保存/更新しました`);
+    }
+
+    function saveAsNewCandidate() {
+      const name = document.getElementById('candName').value.trim();
+      if (!name) return alert('候補名を入力してください');
+      const saved = getSavedCandidates();
+      if (saved[name]) {
+        const newName = prompt('別名で保存する新しい候補名を入力してください', `${name}_copy`);
+        if (!newName) return;
+        const trimmed = newName.trim();
+        if (!trimmed) return;
+        saveToStorage(trimmed);
+      } else {
+        saveToStorage(name);
+      }
     }
 
     function overwriteSelected() {
@@ -443,13 +453,6 @@
       const saved = getSavedCandidates();
       delete saved[name];
       saveCandidates(saved);
-      if (editingCandidateName === name) {
-        editingCandidateName = '';
-        document.getElementById('candName').value = '';
-        currentChecks = new Array(upperList.length).fill(false);
-        candidateTagSelection = new Set();
-        syncEditorFromCurrentState();
-      }
       updateSelect();
       alert('削除しました');
     }
@@ -690,9 +693,8 @@
       if (confirm('現在のチェックをクリアしますか？')) {
         currentChecks = new Array(upperList.length).fill(false);
         candidateTagSelection = new Set();
-        editingCandidateName = '';
-        document.getElementById('candName').value = '';
-        syncEditorFromCurrentState();
+        renderCheckTable();
+        renderCandidateTagButtons();
       }
     }
 
