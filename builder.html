@@ -36,9 +36,35 @@
     .tag-input-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px; }
     .tag-input-row input { padding:8px 10px; min-width:220px; }
     .filter-bar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
-    .hidden-option { display:none !important; }
     .select-wrap { border:1px solid #cbd5e1; border-radius:10px; padding:10px; background:#fff; }
     .candidate-tag-line { font-size:12px; color:#64748b; margin-top:4px; }
+    .tag-button {
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid #cbd5e1;
+      background:#f8fafc;
+      color:#0f172a;
+      margin:4px 6px 0 0;
+    }
+    .tag-button.active {
+      background:#2563eb;
+      color:white;
+      border-color:#2563eb;
+    }
+    dialog {
+      border: none;
+      border-radius: 14px;
+      padding: 0;
+      width: min(720px, 92vw);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    }
+    dialog::backdrop { background: rgba(15,23,42,0.5); }
+    .dialog-body { padding:18px; background:white; }
+    .dialog-header { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+    .dialog-title { font-size:18px; font-weight:700; }
+    .dialog-close { background:#e2e8f0; color:#0f172a; }
+    .modal-list { margin-top:12px; line-height:1.7; }
+    .modal-section { margin-top:14px; }
   </style>
 </head>
 <body>
@@ -51,13 +77,19 @@
   </div>
 
   <div class="panel">
+    <h2>タグ管理</h2>
+    <div class="small">先にタグを作って保存し、候補作成時はそのタグを押して付け外しします。</div>
+    <div class="tag-input-row">
+      <input type="text" id="newTagInput" placeholder="新しいタグ名">
+      <button class="primary" onclick="addLibraryTag()">タグを追加</button>
+    </div>
+    <div id="tagLibraryArea" class="tag-list"></div>
+  </div>
+
+  <div class="panel">
     <h2>候補の相性チェック</h2>
     <input type="text" id="candName" placeholder="候補名" style="width:320px;">
-    <div class="candidate-tag-line">候補タグを自由追加できます。</div>
-    <div class="tag-input-row">
-      <input type="text" id="tagInput" placeholder="タグを入力してEnterで追加">
-      <button class="primary" onclick="addTag()">タグ追加</button>
-    </div>
+    <div class="candidate-tag-line">下のタグを押して、この候補に付与します。</div>
     <div id="candidateTagArea" class="tag-list"></div>
     <button class="primary" onclick="saveCandidate()">💾 保存</button>
     <button class="edit" onclick="overwriteSelected()">✏️ 選択中を上書き</button>
@@ -80,12 +112,7 @@
     <h2>保存済み候補（Ctrl+クリックで複数選択）</h2>
     <div class="filter-bar">
       <span class="small">タグで絞り込み：</span>
-      <label><input type="checkbox" class="roleFilter" value="スカーフ" onchange="applyCandidateFilter()"> スカーフ</label>
-      <label><input type="checkbox" class="roleFilter" value="受け" onchange="applyCandidateFilter()"> 受け</label>
-      <label><input type="checkbox" class="roleFilter" value="崩し" onchange="applyCandidateFilter()"> 崩し</label>
-      <label><input type="checkbox" class="roleFilter" value="起点作成" onchange="applyCandidateFilter()"> 起点作成</label>
-      <label><input type="checkbox" class="roleFilter" value="高速" onchange="applyCandidateFilter()"> 高速</label>
-      <label><input type="checkbox" class="roleFilter" value="先制技" onchange="applyCandidateFilter()"> 先制技</label>
+      <div id="filterTagArea" class="tag-list"></div>
       <button onclick="clearRoleFilter()">フィルタ解除</button>
     </div>
     <div class="select-wrap">
@@ -112,10 +139,28 @@
     <div id="bestResult" class="small"></div>
   </div>
 
+  <dialog id="tagDialog">
+    <div class="dialog-body">
+      <div class="dialog-header">
+        <div class="dialog-title">タグ管理</div>
+        <button class="dialog-close" onclick="closeTagDialog()">閉じる</button>
+      </div>
+      <div class="small" id="tagDialogInfo" style="margin-top:10px;"></div>
+      <div class="modal-section">
+        <div class="tag-input-row">
+          <input type="text" id="dialogTagInput" placeholder="タグ名">
+          <button class="primary" onclick="addTagFromDialog()">追加</button>
+        </div>
+        <div id="dialogTagList" class="tag-list"></div>
+      </div>
+    </div>
+  </dialog>
+
   <script>
     let upperList = [];
     let currentChecks = [];
-    let candidateTags = [];
+    let savedTagLibrary = [];
+    let candidateTagSelection = new Set();
     let lastCompared = [];
 
     const defaultRanking = `ガブリアス
@@ -205,6 +250,23 @@
       currentChecks = new Array(upperList.length).fill(false);
     }
 
+    function getSavedCandidates() {
+      return JSON.parse(localStorage.getItem('teamCandidates') || '{}');
+    }
+
+    function saveCandidates(data) {
+      localStorage.setItem('teamCandidates', JSON.stringify(data));
+    }
+
+    function loadTagLibrary() {
+      savedTagLibrary = JSON.parse(localStorage.getItem('tagLibrary') || '[]').filter(Boolean);
+      savedTagLibrary = Array.from(new Set(savedTagLibrary)).sort((a,b) => a.localeCompare(b, 'ja'));
+    }
+
+    function saveTagLibrary() {
+      localStorage.setItem('tagLibrary', JSON.stringify(savedTagLibrary));
+    }
+
     function renderCheckTable() {
       const tbody = document.querySelector('#checkTable tbody');
       tbody.innerHTML = '';
@@ -221,43 +283,94 @@
       });
     }
 
-    function renderTagArea() {
-      const area = document.getElementById('candidateTagArea');
+    function renderLibraryTags() {
+      const area = document.getElementById('tagLibraryArea');
       area.innerHTML = '';
-      candidateTags.forEach(tag => {
+      savedTagLibrary.forEach(tag => {
         const chip = document.createElement('span');
         chip.className = 'tag-chip';
-        chip.innerHTML = `${tag} <button type="button" onclick="removeTag('${tag}')">×</button>`;
+        chip.innerHTML = `${tag} <button type="button" onclick="removeLibraryTag('${escapeQuotes(tag)}')">×</button>`;
         area.appendChild(chip);
+      });
+      renderCandidateTagButtons();
+      renderFilterTagButtons();
+    }
+
+    function renderCandidateTagButtons() {
+      const area = document.getElementById('candidateTagArea');
+      area.innerHTML = '';
+      savedTagLibrary.forEach(tag => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'tag-button' + (candidateTagSelection.has(tag) ? ' active' : '');
+        btn.textContent = tag;
+        btn.onclick = () => toggleCandidateTag(tag);
+        area.appendChild(btn);
+      });
+      if (!savedTagLibrary.length) {
+        area.innerHTML = '<span class="small">先にタグ管理でタグを追加してください。</span>';
+      }
+    }
+
+    function renderFilterTagButtons() {
+      const area = document.getElementById('filterTagArea');
+      area.innerHTML = '';
+      savedTagLibrary.forEach(tag => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'tag-button roleFilterBtn';
+        btn.dataset.tag = tag;
+        btn.textContent = tag;
+        btn.onclick = () => toggleFilterTag(tag);
+        area.appendChild(btn);
       });
     }
 
-    function addTag() {
-      const input = document.getElementById('tagInput');
+    function addLibraryTag() {
+      const input = document.getElementById('newTagInput');
       const tag = input.value.trim();
       if (!tag) return;
-      if (!candidateTags.includes(tag)) {
-        candidateTags.push(tag);
-        candidateTags.sort((a,b) => a.localeCompare(b, 'ja'));
-        renderTagArea();
-        applyCandidateFilter();
+      if (!savedTagLibrary.includes(tag)) {
+        savedTagLibrary.push(tag);
+        savedTagLibrary = Array.from(new Set(savedTagLibrary)).sort((a,b) => a.localeCompare(b, 'ja'));
+        saveTagLibrary();
+        renderLibraryTags();
       }
       input.value = '';
       input.focus();
     }
 
-    function removeTag(tag) {
-      candidateTags = candidateTags.filter(t => t !== tag);
-      renderTagArea();
-      applyCandidateFilter();
+    function addTagFromDialog() {
+      const input = document.getElementById('dialogTagInput');
+      const tag = input.value.trim();
+      if (!tag) return;
+      if (!savedTagLibrary.includes(tag)) {
+        savedTagLibrary.push(tag);
+        savedTagLibrary = Array.from(new Set(savedTagLibrary)).sort((a,b) => a.localeCompare(b, 'ja'));
+        saveTagLibrary();
+        renderLibraryTags();
+      }
+      input.value = '';
+      input.focus();
     }
 
-    document.addEventListener('keydown', (e) => {
-      if (e.target && e.target.id === 'tagInput' && e.key === 'Enter') {
-        e.preventDefault();
-        addTag();
-      }
-    });
+    function removeLibraryTag(tag) {
+      if (!confirm(`タグ「${tag}」を削除しますか？`)) return;
+      savedTagLibrary = savedTagLibrary.filter(t => t !== tag);
+      saveTagLibrary();
+      candidateTagSelection.delete(tag);
+      renderLibraryTags();
+    }
+
+    function toggleCandidateTag(tag) {
+      if (candidateTagSelection.has(tag)) candidateTagSelection.delete(tag);
+      else candidateTagSelection.add(tag);
+      renderCandidateTagButtons();
+    }
+
+    function getSelectedCandidateTags() {
+      return Array.from(candidateTagSelection);
+    }
 
     function saveCandidate() {
       const name = document.getElementById('candName').value.trim();
@@ -266,12 +379,12 @@
     }
 
     function saveToStorage(name) {
-      let saved = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
+      const saved = getSavedCandidates();
       saved[name] = {
         checks: currentChecks.slice(),
-        tags: candidateTags.slice()
+        tags: getSelectedCandidateTags()
       };
-      localStorage.setItem('teamCandidates', JSON.stringify(saved));
+      saveCandidates(saved);
       updateSelect();
       alert(`「${name}」を保存/更新しました`);
     }
@@ -288,9 +401,9 @@
       const name = select.value;
       if (!name) return alert("削除する候補を選択してください");
       if (!confirm(`「${name}」を削除しますか？`)) return;
-      let saved = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
+      const saved = getSavedCandidates();
       delete saved[name];
-      localStorage.setItem('teamCandidates', JSON.stringify(saved));
+      saveCandidates(saved);
       updateSelect();
       alert("削除しました");
     }
@@ -298,7 +411,7 @@
     function updateSelect() {
       const select = document.getElementById('candidateSelect');
       select.innerHTML = '';
-      const saved = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
+      const saved = getSavedCandidates();
       Object.keys(saved).sort().forEach(name => {
         const opt = document.createElement('option');
         opt.value = name;
@@ -311,13 +424,20 @@
     }
 
     function getActiveRoleFilters() {
-      return Array.from(document.querySelectorAll('.roleFilter:checked')).map(el => el.value);
+      return Array.from(document.querySelectorAll('.roleFilterBtn.active')).map(el => el.dataset.tag);
+    }
+
+    function toggleFilterTag(tag) {
+      const btn = Array.from(document.querySelectorAll('.roleFilterBtn')).find(el => el.dataset.tag === tag);
+      if (!btn) return;
+      btn.classList.toggle('active');
+      applyCandidateFilter();
     }
 
     function applyCandidateFilter() {
       const filters = getActiveRoleFilters();
       const select = document.getElementById('candidateSelect');
-      const saved = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
+      const saved = getSavedCandidates();
 
       Array.from(select.options).forEach(opt => {
         const tags = saved[opt.value]?.tags || [];
@@ -327,14 +447,15 @@
     }
 
     function clearRoleFilter() {
-      document.querySelectorAll('.roleFilter').forEach(cb => cb.checked = false);
+      document.querySelectorAll('.roleFilterBtn').forEach(cb => cb.classList.remove('active'));
       applyCandidateFilter();
     }
 
     function getVisibleSelectedCandidateNames() {
-      return Array.from(document.getElementById('candidateSelect').selectedOptions)
+      const select = document.getElementById('candidateSelect');
+      return Array.from(select.selectedOptions)
         .map(o => o.value)
-        .filter(name => !document.querySelector(`#candidateSelect option[value="${CSS.escape(name)}"]`)?.hidden)
+        .filter(name => !select.querySelector(`option[value="${CSS.escape(name)}"]`)?.hidden)
         .slice(0, 6);
     }
 
@@ -343,7 +464,7 @@
       if (selected.length === 0) return alert("比較したい候補を選択してください");
       lastCompared = selected.slice();
 
-      const savedData = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
+      const savedData = getSavedCandidates();
       const header = document.getElementById('compareHeader');
       const body = document.getElementById('compareBody');
 
@@ -378,17 +499,14 @@
         .filter(name => !document.querySelector(`#candidateSelect option[value="${CSS.escape(name)}"]`)?.hidden);
 
       if (selected.length === 0) return alert("上位ポケモンを選択してください");
-      const savedData = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
-
+      const savedData = getSavedCandidates();
       const targetIndices = selected.map(name => upperList.indexOf(name)).filter(i => i >= 0);
       if (targetIndices.length === 0) return alert("選択した上位ポケモンが見つかりませんでした");
 
       const scores = Object.entries(savedData).map(([name, data]) => {
         const checks = data.checks || [];
         let score = 0;
-        targetIndices.forEach(idx => {
-          if (checks[idx]) score++;
-        });
+        targetIndices.forEach(idx => { if (checks[idx]) score++; });
         return { name, score };
       }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'ja'));
 
@@ -398,7 +516,7 @@
     }
 
     function exportCSV() {
-      const saved = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
+      const saved = getSavedCandidates();
       let csv = "候補名,タグ," + upperList.join(",") + "\n";
       Object.keys(saved).forEach(name => {
         const tags = (saved[name].tags || []).join('|');
@@ -455,10 +573,38 @@
       }
     }
 
+    function openTagDialog() {
+      const dialog = document.getElementById('tagDialog');
+      document.getElementById('tagDialogInfo').textContent = 'ここでタグを追加・削除できます。';
+      renderDialogTagList();
+      dialog.showModal();
+    }
+
+    function closeTagDialog() {
+      document.getElementById('tagDialog').close();
+    }
+
+    function renderDialogTagList() {
+      const area = document.getElementById('dialogTagList');
+      area.innerHTML = '';
+      savedTagLibrary.forEach(tag => {
+        const chip = document.createElement('span');
+        chip.className = 'tag-chip';
+        chip.innerHTML = `${tag} <button type="button" onclick="removeLibraryTag('${escapeQuotes(tag)}')">×</button>`;
+        area.appendChild(chip);
+      });
+      if (!savedTagLibrary.length) area.innerHTML = '<span class="small">タグがまだありません。</span>';
+    }
+
+    function escapeQuotes(str) {
+      return String(str).replace(/'/g, "\\'");
+    }
+
     loadRanking();
-    renderTagArea();
+    loadTagLibrary();
     document.getElementById('rankingInput').value = upperList.join('\n');
     renderCheckTable();
+    renderLibraryTags();
     updateSelect();
   </script>
 </body>
