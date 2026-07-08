@@ -19,11 +19,7 @@
     .primary { background:#2563eb; color:white; }
     .delete { background:#ef4444; color:white; }
     .edit { background:#eab308; color:black; }
-    .popup { 
-      position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); 
-      background:white; padding:20px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.3); 
-      max-width:90%; z-index:1000; max-height:80%; overflow:auto;
-    }
+    .analysis { margin:20px 0; padding:15px; background:#fef3c7; border-radius:8px; line-height:1.6; }
   </style>
 </head>
 <body>
@@ -51,18 +47,20 @@
     <tbody></tbody>
   </table>
 
-  <h2>保存済み候補（Ctrl+クリックで複数選択・最大6）</h2>
+  <h2>保存済み候補（Ctrl+クリックで複数選択）</h2>
   <select id="candidateSelect" multiple size="10" style="width:100%; max-width:900px;"></select><br>
   <button class="primary" onclick="showComparison()" style="padding:12px 30px;">横並び比較</button>
 
   <div id="analysis" class="analysis" style="display:none;"></div>
 
+  <h2>上位ポケモンから候補検索</h2>
+  <select id="upperSelect" multiple size="8" style="width:100%; max-width:900px;"></select><br>
+  <button class="primary" onclick="searchByUpper()">この上位ポケモンたちに強い候補を探す</button>
+
   <table id="compareTable" style="display:none; margin-top:20px;">
     <thead><tr id="compareHeader"></tr></thead>
     <tbody id="compareBody"></tbody>
   </table>
-
-  <div id="popup" class="popup" style="display:none;"></div>
 
   <script>
     let upperList = [];
@@ -173,7 +171,11 @@
     function saveCandidate() {
       const name = document.getElementById('candName').value.trim();
       if (!name) return alert("候補名を入力してください");
-      saveToStorage(name);
+      let saved = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
+      saved[name] = currentChecks.slice();
+      localStorage.setItem('teamCandidates', JSON.stringify(saved));
+      updateSelect();
+      alert(`「${name}」を保存しました`);
     }
 
     function overwriteSelected() {
@@ -181,16 +183,12 @@
       const name = select.value;
       if (!name) return alert("上書きしたい候補を選択してください");
       if (confirm(`「${name}」を上書きしますか？`)) {
-        saveToStorage(name);
+        let saved = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
+        saved[name] = currentChecks.slice();
+        localStorage.setItem('teamCandidates', JSON.stringify(saved));
+        updateSelect();
+        alert(`「${name}」を上書きしました`);
       }
-    }
-
-    function saveToStorage(name) {
-      let saved = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
-      saved[name] = currentChecks.slice();
-      localStorage.setItem('teamCandidates', JSON.stringify(saved));
-      updateSelect();
-      alert(`「${name}」を保存/更新しました`);
     }
 
     function deleteSelected() {
@@ -221,7 +219,6 @@
       const select = document.getElementById('candidateSelect');
       const selected = Array.from(select.selectedOptions).map(o => o.value);
       if (selected.length === 0) return alert("比較したい候補を選択してください");
-      if (selected.length > 6) return alert("最大6匹までです");
 
       const savedData = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
       const header = document.getElementById('compareHeader');
@@ -236,26 +233,42 @@
       });
 
       body.innerHTML = '';
-      const coverage = new Array(selected.length).fill(0);
-
       upperList.forEach((poke, i) => {
         const tr = document.createElement('tr');
         tr.innerHTML = `<td class="rank">${i+1}</td><td class="pokemon">${poke}</td>`;
-        selected.forEach((name, col) => {
+        selected.forEach(name => {
           const checks = savedData[name] || [];
-          const isCovered = checks[i] || false;
           const td = document.createElement('td');
-          td.textContent = isCovered ? '✓' : '';
-          if (isCovered) {
-            td.classList.add('good');
-            coverage[col]++;
-          }
+          td.textContent = checks[i] ? '✓' : '';
+          if (checks[i]) td.classList.add('good');
           tr.appendChild(td);
         });
         body.appendChild(tr);
       });
 
       document.getElementById('compareTable').style.display = 'table';
+    }
+
+    function searchByUpper() {
+      const upperSelect = document.getElementById('upperSelect');
+      const selectedUpper = Array.from(upperSelect.selectedOptions).map(o => parseInt(o.value));
+      if (selectedUpper.length === 0) return alert("上位ポケモンを選択してください");
+
+      const savedData = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
+      let bestCandidate = {name: '', count: 0};
+
+      Object.keys(savedData).forEach(name => {
+        let count = 0;
+        selectedUpper.forEach(idx => {
+          if (savedData[name][idx]) count++;
+        });
+        if (count > bestCandidate.count) bestCandidate = {name, count};
+      });
+
+      let result = `<strong>選択した上位ポケモン(${selectedUpper.length}体)に対して最も対応できる候補:</strong><br>`;
+      result += bestCandidate.name ? `${bestCandidate.name} (${bestCandidate.count}体)` : '該当なし';
+      document.getElementById('analysis').innerHTML = result;
+      document.getElementById('analysis').style.display = 'block';
     }
 
     function clearCurrent() {
@@ -280,6 +293,15 @@
     document.getElementById('rankingInput').value = upperList.join('\n');
     renderCheckTable();
     updateSelect();
+
+    // 上位ポケモン選択リスト
+    const upperSelect = document.getElementById('upperSelect');
+    upperList.forEach((name, i) => {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = `${i+1}. ${name}`;
+      upperSelect.appendChild(opt);
+    });
   </script>
 </body>
 </html>
