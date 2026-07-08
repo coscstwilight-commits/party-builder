@@ -51,20 +51,6 @@
       color:white;
       border-color:#2563eb;
     }
-    dialog {
-      border: none;
-      border-radius: 14px;
-      padding: 0;
-      width: min(720px, 92vw);
-      box-shadow: 0 20px 60px rgba(0,0,0,0.25);
-    }
-    dialog::backdrop { background: rgba(15,23,42,0.5); }
-    .dialog-body { padding:18px; background:white; }
-    .dialog-header { display:flex; justify-content:space-between; align-items:center; gap:10px; }
-    .dialog-title { font-size:18px; font-weight:700; }
-    .dialog-close { background:#e2e8f0; color:#0f172a; }
-    .modal-list { margin-top:12px; line-height:1.7; }
-    .modal-section { margin-top:14px; }
   </style>
 </head>
 <body>
@@ -119,7 +105,16 @@
       <select id="candidateSelect" multiple size="10" style="width:100%; max-width:900px;"></select>
     </div><br>
     <button class="primary" onclick="showComparison()" style="padding:12px 30px;">横並び比較</button>
+  </div>
+
+  <div class="panel">
+    <h2>上位ポケモン選択</h2>
+    <div class="small">「選択相手に最適候補」で使う上位ポケモンをここで選びます。</div>
+    <div class="select-wrap">
+      <select id="upperPokemonSelect" multiple size="10" style="width:100%; max-width:900px;"></select>
+    </div><br>
     <button class="primary" onclick="showBestCandidates()" style="padding:12px 30px;">選択相手に最適候補</button>
+    <div id="bestResult" class="small" style="margin-top:10px;"></div>
   </div>
 
   <div class="panel">
@@ -133,28 +128,6 @@
     <thead><tr id="compareHeader"></tr></thead>
     <tbody id="compareBody"></tbody>
   </table>
-
-  <div class="panel">
-    <h2>最適候補結果</h2>
-    <div id="bestResult" class="small"></div>
-  </div>
-
-  <dialog id="tagDialog">
-    <div class="dialog-body">
-      <div class="dialog-header">
-        <div class="dialog-title">タグ管理</div>
-        <button class="dialog-close" onclick="closeTagDialog()">閉じる</button>
-      </div>
-      <div class="small" id="tagDialogInfo" style="margin-top:10px;"></div>
-      <div class="modal-section">
-        <div class="tag-input-row">
-          <input type="text" id="dialogTagInput" placeholder="タグ名">
-          <button class="primary" onclick="addTagFromDialog()">追加</button>
-        </div>
-        <div id="dialogTagList" class="tag-list"></div>
-      </div>
-    </div>
-  </dialog>
 
   <script>
     let upperList = [];
@@ -283,6 +256,17 @@
       });
     }
 
+    function renderUpperPokemonSelect() {
+      const select = document.getElementById('upperPokemonSelect');
+      select.innerHTML = '';
+      upperList.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        select.appendChild(opt);
+      });
+    }
+
     function renderLibraryTags() {
       const area = document.getElementById('tagLibraryArea');
       area.innerHTML = '';
@@ -307,9 +291,7 @@
         btn.onclick = () => toggleCandidateTag(tag);
         area.appendChild(btn);
       });
-      if (!savedTagLibrary.length) {
-        area.innerHTML = '<span class="small">先にタグ管理でタグを追加してください。</span>';
-      }
+      if (!savedTagLibrary.length) area.innerHTML = '<span class="small">先にタグ管理でタグを追加してください。</span>';
     }
 
     function renderFilterTagButtons() {
@@ -328,20 +310,6 @@
 
     function addLibraryTag() {
       const input = document.getElementById('newTagInput');
-      const tag = input.value.trim();
-      if (!tag) return;
-      if (!savedTagLibrary.includes(tag)) {
-        savedTagLibrary.push(tag);
-        savedTagLibrary = Array.from(new Set(savedTagLibrary)).sort((a,b) => a.localeCompare(b, 'ja'));
-        saveTagLibrary();
-        renderLibraryTags();
-      }
-      input.value = '';
-      input.focus();
-    }
-
-    function addTagFromDialog() {
-      const input = document.getElementById('dialogTagInput');
       const tag = input.value.trim();
       if (!tag) return;
       if (!savedTagLibrary.includes(tag)) {
@@ -438,7 +406,6 @@
       const filters = getActiveRoleFilters();
       const select = document.getElementById('candidateSelect');
       const saved = getSavedCandidates();
-
       Array.from(select.options).forEach(opt => {
         const tags = saved[opt.value]?.tags || [];
         const visible = filters.length === 0 || filters.every(f => tags.includes(f));
@@ -463,11 +430,9 @@
       const selected = getVisibleSelectedCandidateNames();
       if (selected.length === 0) return alert("比較したい候補を選択してください");
       lastCompared = selected.slice();
-
       const savedData = getSavedCandidates();
       const header = document.getElementById('compareHeader');
       const body = document.getElementById('compareBody');
-
       header.innerHTML = '<th class="rank">順位</th><th class="pokemon">上位ポケモン</th>';
       selected.forEach(name => {
         const th = document.createElement('th');
@@ -475,7 +440,6 @@
         th.textContent = name;
         header.appendChild(th);
       });
-
       body.innerHTML = '';
       upperList.forEach((poke, i) => {
         const tr = document.createElement('tr');
@@ -489,27 +453,22 @@
         });
         body.appendChild(tr);
       });
-
       document.getElementById('compareTable').style.display = 'table';
     }
 
     function showBestCandidates() {
-      const selected = Array.from(document.getElementById('candidateSelect').selectedOptions)
-        .map(o => o.value)
-        .filter(name => !document.querySelector(`#candidateSelect option[value="${CSS.escape(name)}"]`)?.hidden);
-
+      const upperSelect = document.getElementById('upperPokemonSelect');
+      const selected = Array.from(upperSelect.selectedOptions).map(o => o.value);
       if (selected.length === 0) return alert("上位ポケモンを選択してください");
       const savedData = getSavedCandidates();
       const targetIndices = selected.map(name => upperList.indexOf(name)).filter(i => i >= 0);
       if (targetIndices.length === 0) return alert("選択した上位ポケモンが見つかりませんでした");
-
       const scores = Object.entries(savedData).map(([name, data]) => {
         const checks = data.checks || [];
         let score = 0;
         targetIndices.forEach(idx => { if (checks[idx]) score++; });
         return { name, score };
       }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'ja'));
-
       const max = scores.length ? scores[0].score : 0;
       const top = scores.filter(x => x.score === max && max > 0).map(x => `${x.name}（${x.score}/${targetIndices.length}）`);
       document.getElementById('bestResult').innerHTML = top.length ? `最大対応数: <b>${max}</b><br>${top.join('<br>')}` : '対応できる候補がありませんでした。';
@@ -543,10 +502,7 @@
           const values = lines[i].split(',');
           const name = values[0];
           const tags = (values[1] || '').split('|').filter(Boolean);
-          saved[name] = {
-            tags,
-            checks: values.slice(2).map(v => v === 'true')
-          };
+          saved[name] = { tags, checks: values.slice(2).map(v => v === 'true') };
         }
         localStorage.setItem('teamCandidates', JSON.stringify(saved));
         updateSelect();
@@ -568,32 +524,10 @@
         localStorage.setItem('customRanking', text);
         loadRanking();
         renderCheckTable();
+        renderUpperPokemonSelect();
         updateSelect();
         alert("ランキングを更新しました");
       }
-    }
-
-    function openTagDialog() {
-      const dialog = document.getElementById('tagDialog');
-      document.getElementById('tagDialogInfo').textContent = 'ここでタグを追加・削除できます。';
-      renderDialogTagList();
-      dialog.showModal();
-    }
-
-    function closeTagDialog() {
-      document.getElementById('tagDialog').close();
-    }
-
-    function renderDialogTagList() {
-      const area = document.getElementById('dialogTagList');
-      area.innerHTML = '';
-      savedTagLibrary.forEach(tag => {
-        const chip = document.createElement('span');
-        chip.className = 'tag-chip';
-        chip.innerHTML = `${tag} <button type="button" onclick="removeLibraryTag('${escapeQuotes(tag)}')">×</button>`;
-        area.appendChild(chip);
-      });
-      if (!savedTagLibrary.length) area.innerHTML = '<span class="small">タグがまだありません。</span>';
     }
 
     function escapeQuotes(str) {
@@ -604,6 +538,7 @@
     loadTagLibrary();
     document.getElementById('rankingInput').value = upperList.join('\n');
     renderCheckTable();
+    renderUpperPokemonSelect();
     renderLibraryTags();
     updateSelect();
   </script>
