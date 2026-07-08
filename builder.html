@@ -89,9 +89,9 @@
   <div class="panel">
     <h2>候補の相性チェック</h2>
     <input type="text" id="candName" placeholder="候補名" style="width:320px;">
-    <div class="candidate-tag-line">下のタグを押して、この候補に付与します。</div>
+    <div class="candidate-tag-line">下のタグを押して、この候補に付与します。保存済み候補を選ぶと復元されます。</div>
     <div id="candidateTagArea" class="tag-list"></div>
-    <button type="button" class="primary" onclick="saveCandidate()">💾 保存</button>
+    <button type="button" class="primary" onclick="saveCandidate()">💾 保存 / 上書き</button>
     <button type="button" class="edit" onclick="overwriteSelected()">✏️ 選択中を上書き</button>
     <button type="button" class="delete" onclick="deleteSelected()">🗑 選択中を削除</button>
     <button type="button" onclick="clearCurrent()">クリア</button>
@@ -109,14 +109,10 @@
   </div>
 
   <div class="panel">
-    <h2>保存済み候補（Ctrl+クリックで複数選択）</h2>
-    <div class="filter-bar">
-      <span class="small">タグで絞り込み：</span>
-      <div id="filterTagArea" class="tag-list"></div>
-      <button type="button" onclick="clearRoleFilter()">フィルタ解除</button>
-    </div>
+    <h2>保存済み候補（クリックで呼び出し）</h2>
+    <div class="small">候補をクリックすると、チェック状況とタグが編集欄に復元されます。</div>
     <div class="select-wrap">
-      <select id="candidateSelect" multiple size="10" style="width:100%; max-width:900px;"></select>
+      <select id="candidateSelect" size="10" style="width:100%; max-width:900px;" onchange="loadCandidateToEditor()"></select>
     </div><br>
     <button type="button" class="primary" onclick="showComparison()" style="padding:12px 30px;">横並び比較</button>
   </div>
@@ -186,6 +182,7 @@
     let savedTagLibrary = [];
     let candidateTagSelection = new Set();
     let lastCompared = [];
+    let editingCandidateName = '';
 
     const defaultRanking = `ガブリアス
 ミミッキュ
@@ -263,7 +260,7 @@
 ガオガエン
 バサギリ
 エルレイド
-シビルビルドン
+シビルドン
 グレンアルマ
 ヤドラン
 ペンドラー`;
@@ -387,6 +384,27 @@
       renderCandidateTagButtons();
     }
 
+    function syncEditorFromCurrentState() {
+      renderCheckTable();
+      renderCandidateTagButtons();
+    }
+
+    function loadCandidateToEditor() {
+      const select = document.getElementById('candidateSelect');
+      const name = select.value;
+      if (!name) return;
+
+      const saved = getSavedCandidates();
+      const data = saved[name];
+      if (!data) return;
+
+      editingCandidateName = name;
+      document.getElementById('candName').value = name;
+      currentChecks = (data.checks || []).slice();
+      candidateTagSelection = new Set(data.tags || []);
+      syncEditorFromCurrentState();
+    }
+
     function getSelectedCandidateTags() {
       return Array.from(candidateTagSelection);
     }
@@ -404,6 +422,7 @@
         tags: getSelectedCandidateTags()
       };
       saveCandidates(saved);
+      editingCandidateName = name;
       updateSelect();
       alert(`「${name}」を保存/更新しました`);
     }
@@ -412,7 +431,8 @@
       const select = document.getElementById('candidateSelect');
       const name = select.value;
       if (!name) return alert('上書きしたい候補を選択してください');
-      if (confirm(`「${name}」を上書きしますか？`)) saveToStorage(name);
+      loadCandidateToEditor();
+      saveToStorage(name);
     }
 
     function deleteSelected() {
@@ -423,6 +443,13 @@
       const saved = getSavedCandidates();
       delete saved[name];
       saveCandidates(saved);
+      if (editingCandidateName === name) {
+        editingCandidateName = '';
+        document.getElementById('candName').value = '';
+        currentChecks = new Array(upperList.length).fill(false);
+        candidateTagSelection = new Set();
+        syncEditorFromCurrentState();
+      }
       updateSelect();
       alert('削除しました');
     }
@@ -661,8 +688,11 @@
 
     function clearCurrent() {
       if (confirm('現在のチェックをクリアしますか？')) {
-        currentChecks.fill(false);
-        renderCheckTable();
+        currentChecks = new Array(upperList.length).fill(false);
+        candidateTagSelection = new Set();
+        editingCandidateName = '';
+        document.getElementById('candName').value = '';
+        syncEditorFromCurrentState();
       }
     }
 
