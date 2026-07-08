@@ -22,6 +22,13 @@
     input[type="file"] { display:none; }
     .panel { background:white; padding:14px; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.08); margin-bottom:18px; }
     .small { font-size: 13px; color:#475569; }
+    .tag-list { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+    .tag-item { display:flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:999px; background:#f8fafc; }
+    .tag-item input { margin:0; }
+    .filter-bar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
+    .hidden-row { display:none !important; }
+    .candidate-tag-line { font-size:12px; color:#64748b; margin-top:4px; }
+    .select-wrap { border:1px solid #cbd5e1; border-radius:10px; padding:10px; background:#fff; }
   </style>
 </head>
 <body>
@@ -36,6 +43,8 @@
   <div class="panel">
     <h2>候補の相性チェック</h2>
     <input type="text" id="candName" placeholder="候補名" style="width:320px;">
+    <div class="candidate-tag-line">候補タグを付けると、あとで横並び比較時にフィルタできます。</div>
+    <div id="candidateTagArea" class="tag-list"></div>
     <button class="primary" onclick="saveCandidate()">💾 保存</button>
     <button class="edit" onclick="overwriteSelected()">✏️ 選択中を上書き</button>
     <button class="delete" onclick="deleteSelected()">🗑 選択中を削除</button>
@@ -54,17 +63,22 @@
   </div>
 
   <div class="panel">
-    <h2>候補一覧</h2>
-    <select id="candidateSelect" multiple size="10" style="width:100%; max-width:900px;"></select><br>
+    <h2>保存済み候補（Ctrl+クリックで複数選択）</h2>
+    <div class="filter-bar">
+      <span class="small">タグで絞り込み：</span>
+      <label><input type="checkbox" class="roleFilter" value="スカーフ" onchange="applyCandidateFilter()"> スカーフ</label>
+      <label><input type="checkbox" class="roleFilter" value="受け" onchange="applyCandidateFilter()"> 受け</label>
+      <label><input type="checkbox" class="roleFilter" value="崩し" onchange="applyCandidateFilter()"> 崩し</label>
+      <label><input type="checkbox" class="roleFilter" value="起点作成" onchange="applyCandidateFilter()"> 起点作成</label>
+      <label><input type="checkbox" class="roleFilter" value="高速" onchange="applyCandidateFilter()"> 高速</label>
+      <label><input type="checkbox" class="roleFilter" value="先制技" onchange="applyCandidateFilter()"> 先制技</label>
+      <button onclick="clearRoleFilter()">フィルタ解除</button>
+    </div>
+    <div class="select-wrap">
+      <select id="candidateSelect" multiple size="10" style="width:100%; max-width:900px;"></select>
+    </div><br>
     <button class="primary" onclick="showComparison()" style="padding:12px 30px;">横並び比較</button>
     <button class="primary" onclick="showBestCandidates()" style="padding:12px 30px;">選択相手に最適候補</button>
-  </div>
-
-  <div class="panel">
-    <h2>上位ポケモンを複数選択</h2>
-    <select id="upperSelect" multiple size="10" style="width:100%; max-width:900px;"></select><br>
-    <button class="primary" onclick="showBestForUpperSelection()" style="padding:12px 30px;">この相手群に最適候補</button>
-    <div id="bestForUpperResult" class="small" style="margin-top:10px;"></div>
   </div>
 
   <div class="panel">
@@ -72,12 +86,6 @@
     <button class="primary" onclick="exportCSV()">📤 CSVエクスポート</button>
     <button class="primary" onclick="document.getElementById('importFile').click()">📥 CSVインポート</button>
     <input type="file" id="importFile" accept=".csv" style="display:none;" onchange="importCSV(event)">
-  </div>
-
-  <div class="panel">
-    <h2>横並び比較の補助</h2>
-    <button class="primary" onclick="showUncovered()">今の横並び比較で誰もチェックしていない上位ポケモンを表示</button>
-    <div id="uncoveredResult" class="small" style="margin-top:10px;"></div>
   </div>
 
   <table id="compareTable" style="display:none; margin-top:20px;">
@@ -93,6 +101,7 @@
   <script>
     let upperList = [];
     let currentChecks = [];
+    let candidateTags = ["スカーフ", "受け", "崩し", "起点作成", "高速", "先制技"];
     let lastCompared = [];
 
     const defaultRanking = `ガブリアス
@@ -184,10 +193,7 @@
 
     function renderCheckTable() {
       const tbody = document.querySelector('#checkTable tbody');
-      const upperSelect = document.getElementById('upperSelect');
       tbody.innerHTML = '';
-      upperSelect.innerHTML = '';
-
       upperList.forEach((name, i) => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -198,12 +204,22 @@
           </td>
         `;
         tbody.appendChild(tr);
-
-        const opt = document.createElement('option');
-        opt.value = name;
-        opt.textContent = name;
-        upperSelect.appendChild(opt);
       });
+    }
+
+    function renderTagArea() {
+      const area = document.getElementById('candidateTagArea');
+      area.innerHTML = '';
+      candidateTags.forEach(tag => {
+        const label = document.createElement('label');
+        label.className = 'tag-item';
+        label.innerHTML = `<input type="checkbox" class="candTag" value="${tag}"> ${tag}`;
+        area.appendChild(label);
+      });
+    }
+
+    function getSelectedCandidateTags() {
+      return Array.from(document.querySelectorAll('.candTag:checked')).map(el => el.value);
     }
 
     function saveCandidate() {
@@ -214,7 +230,10 @@
 
     function saveToStorage(name) {
       let saved = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
-      saved[name] = currentChecks.slice();
+      saved[name] = {
+        checks: currentChecks.slice(),
+        tags: getSelectedCandidateTags()
+      };
       localStorage.setItem('teamCandidates', JSON.stringify(saved));
       updateSelect();
       alert(`「${name}」を保存/更新しました`);
@@ -224,7 +243,9 @@
       const select = document.getElementById('candidateSelect');
       const name = select.value;
       if (!name) return alert("上書きしたい候補を選択してください");
-      if (confirm(`「${name}」を上書きしますか？`)) saveToStorage(name);
+      if (confirm(`「${name}」を上書きしますか？`)) {
+        saveToStorage(name);
+      }
     }
 
     function deleteSelected() {
@@ -246,17 +267,44 @@
       Object.keys(saved).sort().forEach(name => {
         const opt = document.createElement('option');
         opt.value = name;
-        opt.textContent = name;
+        const tags = (saved[name].tags || []).join(' / ');
+        opt.textContent = tags ? `${name} [${tags}]` : name;
+        opt.dataset.tags = JSON.stringify(saved[name].tags || []);
         select.appendChild(opt);
+      });
+      applyCandidateFilter();
+    }
+
+    function getActiveRoleFilters() {
+      return Array.from(document.querySelectorAll('.roleFilter:checked')).map(el => el.value);
+    }
+
+    function applyCandidateFilter() {
+      const filters = getActiveRoleFilters();
+      const select = document.getElementById('candidateSelect');
+      const saved = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
+
+      Array.from(select.options).forEach(opt => {
+        const tags = saved[opt.value]?.tags || [];
+        const visible = filters.length === 0 || filters.every(f => tags.includes(f));
+        opt.hidden = !visible;
       });
     }
 
-    function getSelectedNames() {
-      return Array.from(document.getElementById('candidateSelect').selectedOptions).map(o => o.value).slice(0, 6);
+    function clearRoleFilter() {
+      document.querySelectorAll('.roleFilter').forEach(cb => cb.checked = false);
+      applyCandidateFilter();
     }
 
-    function getSelectedUpperIndices() {
-      return Array.from(document.getElementById('upperSelect').selectedOptions).map(o => upperList.indexOf(o.value)).filter(i => i >= 0);
+    function getVisibleSelectedCandidateNames() {
+      return Array.from(document.getElementById('candidateSelect').selectedOptions)
+        .map(o => o.value)
+        .filter(name => !document.querySelector(`#candidateSelect option[value="${CSS.escape(name)}"]`)?.hidden)
+        .slice(0, 6);
+    }
+
+    function getSelectedNames() {
+      return getVisibleSelectedCandidateNames();
     }
 
     function showComparison() {
@@ -281,7 +329,7 @@
         const tr = document.createElement('tr');
         tr.innerHTML = `<td class="rank">${i+1}</td><td class="pokemon">${poke}</td>`;
         selected.forEach(name => {
-          const checks = savedData[name] || [];
+          const checks = savedData[name]?.checks || [];
           const td = document.createElement('td');
           td.textContent = checks[i] ? '✓' : '';
           if (checks[i]) td.classList.add('good');
@@ -291,23 +339,26 @@
       });
 
       document.getElementById('compareTable').style.display = 'table';
-      document.getElementById('uncoveredResult').innerHTML = '';
     }
 
     function showBestCandidates() {
-      const selected = getSelectedNames();
+      const selected = Array.from(document.getElementById('candidateSelect').selectedOptions)
+        .map(o => o.value)
+        .filter(name => !document.querySelector(`#candidateSelect option[value="${CSS.escape(name)}"]`)?.hidden);
+
       if (selected.length === 0) return alert("上位ポケモンを選択してください");
       const savedData = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
 
       const targetIndices = selected.map(name => upperList.indexOf(name)).filter(i => i >= 0);
       if (targetIndices.length === 0) return alert("選択した上位ポケモンが見つかりませんでした");
 
-      const scores = Object.entries(savedData).map(([name, checks]) => {
+      const scores = Object.entries(savedData).map(([name, data]) => {
+        const checks = data.checks || [];
         let score = 0;
         targetIndices.forEach(idx => {
           if (checks[idx]) score++;
         });
-        return { name, score };
+        return { name, score, tags: data.tags || [] };
       }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'ja'));
 
       const max = scores.length ? scores[0].score : 0;
@@ -315,37 +366,12 @@
       document.getElementById('bestResult').innerHTML = top.length ? `最大対応数: <b>${max}</b><br>${top.join('<br>')}` : '対応できる候補がありませんでした。';
     }
 
-    function showUncovered() {
-      const selected = lastCompared.length ? lastCompared : getSelectedNames();
-      if (selected.length === 0) return alert("先に横並び比較で候補を選択してください");
-      const savedData = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
-      const uncovered = upperList.filter((poke, i) => selected.every(name => !(savedData[name] || [])[i]));
-      document.getElementById('uncoveredResult').innerHTML = uncovered.length ? uncovered.map((x, i) => `${i+1}. ${x}`).join('<br>') : '該当なし';
-    }
-
-    function showBestForUpperSelection() {
-      const indices = getSelectedUpperIndices();
-      if (indices.length === 0) return alert("上位ポケモンを選択してください");
-      const savedData = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
-
-      const scores = Object.entries(savedData).map(([name, checks]) => {
-        let score = 0;
-        indices.forEach(idx => {
-          if (checks[idx]) score++;
-        });
-        return { name, score };
-      }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'ja'));
-
-      const max = scores.length ? scores[0].score : 0;
-      const top = scores.filter(x => x.score === max && max > 0).map(x => `${x.name}（${x.score}/${indices.length}）`);
-      document.getElementById('bestForUpperResult').innerHTML = top.length ? `最大対応数: <b>${max}</b><br>${top.join('<br>')}` : '対応できる候補がありませんでした。';
-    }
-
     function exportCSV() {
       const saved = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
-      let csv = "候補名," + upperList.join(",") + "\n";
+      let csv = "候補名,タグ, " + upperList.join(",") + "\n";
       Object.keys(saved).forEach(name => {
-        csv += name + "," + saved[name].map(v => v ? 'true' : 'false').join(",") + "\n";
+        const tags = (saved[name].tags || []).join('|');
+        csv += name + "," + tags + "," + (saved[name].checks || []).map(v => v ? 'true' : 'false').join(",") + "\n";
       });
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
@@ -367,7 +393,11 @@
         for (let i = 1; i < lines.length; i++) {
           const values = lines[i].split(',');
           const name = values[0];
-          saved[name] = values.slice(1).map(v => v === 'true');
+          const tags = (values[1] || '').split('|').filter(Boolean);
+          saved[name] = {
+            tags,
+            checks: values.slice(2).map(v => v === 'true')
+          };
         }
         localStorage.setItem('teamCandidates', JSON.stringify(saved));
         updateSelect();
@@ -395,6 +425,7 @@
     }
 
     loadRanking();
+    renderTagArea();
     document.getElementById('rankingInput').value = upperList.join('\n');
     renderCheckTable();
     updateSelect();
