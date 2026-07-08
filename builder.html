@@ -51,6 +51,20 @@
       color:white;
       border-color:#2563eb;
     }
+    dialog {
+      border: none;
+      border-radius: 14px;
+      padding: 0;
+      width: min(760px, 92vw);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    }
+    dialog::backdrop { background: rgba(15,23,42,0.5); }
+    .dialog-body { padding:18px; background:white; }
+    .dialog-header { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+    .dialog-title { font-size:18px; font-weight:700; }
+    .dialog-close { background:#e2e8f0; color:#0f172a; }
+    .modal-list { margin-top:12px; line-height:1.7; white-space:pre-wrap; }
+    .modal-section { margin-top:14px; }
   </style>
 </head>
 <body>
@@ -118,6 +132,12 @@
   </div>
 
   <div class="panel">
+    <h2>横並び比較の補助</h2>
+    <button class="primary" onclick="showUncoveredDialog()" style="padding:12px 30px;">未対応ポケモン表示</button>
+    <button class="primary" onclick="showOverlapCandidates()" style="padding:12px 30px;">役割対象の重複が多い組み合わせ</button>
+  </div>
+
+  <div class="panel">
     <h2>データ管理</h2>
     <button class="primary" onclick="exportCSV()">📤 CSVエクスポート</button>
     <button class="primary" onclick="document.getElementById('importFile').click()">📥 CSVインポート</button>
@@ -128,6 +148,43 @@
     <thead><tr id="compareHeader"></tr></thead>
     <tbody id="compareBody"></tbody>
   </table>
+
+  <dialog id="tagDialog">
+    <div class="dialog-body">
+      <div class="dialog-header">
+        <div class="dialog-title">タグ管理</div>
+        <button class="dialog-close" onclick="closeTagDialog()">閉じる</button>
+      </div>
+      <div class="small" id="tagDialogInfo" style="margin-top:10px;"></div>
+      <div class="modal-section">
+        <div class="tag-input-row">
+          <input type="text" id="dialogTagInput" placeholder="タグ名">
+          <button class="primary" onclick="addTagFromDialog()">追加</button>
+        </div>
+        <div id="dialogTagList" class="tag-list"></div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="uncoveredDialog">
+    <div class="dialog-body">
+      <div class="dialog-header">
+        <div class="dialog-title">未対応ポケモン</div>
+        <button class="dialog-close" onclick="closeUncoveredDialog()">閉じる</button>
+      </div>
+      <div id="uncoveredDialogBody" class="modal-list"></div>
+    </div>
+  </dialog>
+
+  <dialog id="overlapDialog">
+    <div class="dialog-body">
+      <div class="dialog-header">
+        <div class="dialog-title">役割対象の重複が多い組み合わせ</div>
+        <button class="dialog-close" onclick="closeOverlapDialog()">閉じる</button>
+      </div>
+      <div id="overlapDialogBody" class="modal-list"></div>
+    </div>
+  </dialog>
 
   <script>
     let upperList = [];
@@ -212,7 +269,7 @@
 ガオガエン
 バサギリ
 エルレイド
-シビルドン
+シビルビルドン
 グレンアルマ
 ヤドラン
 ペンドラー`;
@@ -278,6 +335,7 @@
       });
       renderCandidateTagButtons();
       renderFilterTagButtons();
+      renderDialogTagList();
     }
 
     function renderCandidateTagButtons() {
@@ -308,8 +366,34 @@
       });
     }
 
+    function renderDialogTagList() {
+      const area = document.getElementById('dialogTagList');
+      area.innerHTML = '';
+      savedTagLibrary.forEach(tag => {
+        const chip = document.createElement('span');
+        chip.className = 'tag-chip';
+        chip.innerHTML = `${tag} <button type="button" onclick="removeLibraryTag('${escapeQuotes(tag)}')">×</button>`;
+        area.appendChild(chip);
+      });
+      if (!savedTagLibrary.length) area.innerHTML = '<span class="small">タグがまだありません。</span>';
+    }
+
     function addLibraryTag() {
       const input = document.getElementById('newTagInput');
+      const tag = input.value.trim();
+      if (!tag) return;
+      if (!savedTagLibrary.includes(tag)) {
+        savedTagLibrary.push(tag);
+        savedTagLibrary = Array.from(new Set(savedTagLibrary)).sort((a,b) => a.localeCompare(b, 'ja'));
+        saveTagLibrary();
+        renderLibraryTags();
+      }
+      input.value = '';
+      input.focus();
+    }
+
+    function addTagFromDialog() {
+      const input = document.getElementById('dialogTagInput');
       const tag = input.value.trim();
       if (!tag) return;
       if (!savedTagLibrary.includes(tag)) {
@@ -342,7 +426,7 @@
 
     function saveCandidate() {
       const name = document.getElementById('candName').value.trim();
-      if (!name) return alert("候補名を入力してください");
+      if (!name) return alert('候補名を入力してください');
       saveToStorage(name);
     }
 
@@ -360,20 +444,20 @@
     function overwriteSelected() {
       const select = document.getElementById('candidateSelect');
       const name = select.value;
-      if (!name) return alert("上書きしたい候補を選択してください");
+      if (!name) return alert('上書きしたい候補を選択してください');
       if (confirm(`「${name}」を上書きしますか？`)) saveToStorage(name);
     }
 
     function deleteSelected() {
       const select = document.getElementById('candidateSelect');
       const name = select.value;
-      if (!name) return alert("削除する候補を選択してください");
+      if (!name) return alert('削除する候補を選択してください');
       if (!confirm(`「${name}」を削除しますか？`)) return;
       const saved = getSavedCandidates();
       delete saved[name];
       saveCandidates(saved);
       updateSelect();
-      alert("削除しました");
+      alert('削除しました');
     }
 
     function updateSelect() {
@@ -428,11 +512,13 @@
 
     function showComparison() {
       const selected = getVisibleSelectedCandidateNames();
-      if (selected.length === 0) return alert("比較したい候補を選択してください");
+      if (selected.length === 0) return alert('比較したい候補を選択してください');
       lastCompared = selected.slice();
+
       const savedData = getSavedCandidates();
       const header = document.getElementById('compareHeader');
       const body = document.getElementById('compareBody');
+
       header.innerHTML = '<th class="rank">順位</th><th class="pokemon">上位ポケモン</th>';
       selected.forEach(name => {
         const th = document.createElement('th');
@@ -440,6 +526,7 @@
         th.textContent = name;
         header.appendChild(th);
       });
+
       body.innerHTML = '';
       upperList.forEach((poke, i) => {
         const tr = document.createElement('tr');
@@ -453,25 +540,71 @@
         });
         body.appendChild(tr);
       });
+
       document.getElementById('compareTable').style.display = 'table';
     }
 
     function showBestCandidates() {
       const upperSelect = document.getElementById('upperPokemonSelect');
       const selected = Array.from(upperSelect.selectedOptions).map(o => o.value);
-      if (selected.length === 0) return alert("上位ポケモンを選択してください");
+      if (selected.length === 0) return alert('上位ポケモンを選択してください');
+
       const savedData = getSavedCandidates();
       const targetIndices = selected.map(name => upperList.indexOf(name)).filter(i => i >= 0);
-      if (targetIndices.length === 0) return alert("選択した上位ポケモンが見つかりませんでした");
+      if (targetIndices.length === 0) return alert('選択した上位ポケモンが見つかりませんでした');
+
       const scores = Object.entries(savedData).map(([name, data]) => {
         const checks = data.checks || [];
         let score = 0;
         targetIndices.forEach(idx => { if (checks[idx]) score++; });
         return { name, score };
       }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'ja'));
+
       const max = scores.length ? scores[0].score : 0;
       const top = scores.filter(x => x.score === max && max > 0).map(x => `${x.name}（${x.score}/${targetIndices.length}）`);
       document.getElementById('bestResult').innerHTML = top.length ? `最大対応数: <b>${max}</b><br>${top.join('<br>')}` : '対応できる候補がありませんでした。';
+    }
+
+    function showUncoveredDialog() {
+      if (!lastCompared.length) return alert('先に横並び比較をしてください');
+
+      const savedData = getSavedCandidates();
+      const uncovered = upperList.filter((poke, i) =>
+        lastCompared.every(name => !(savedData[name]?.checks || [])[i])
+      );
+
+      const body = document.getElementById('uncoveredDialogBody');
+      body.innerHTML = uncovered.length
+        ? uncovered.map((x, i) => `${i + 1}. ${x}`).join('<br>')
+        : '未対応の上位ポケモンはありません。';
+
+      document.getElementById('uncoveredDialog').showModal();
+    }
+
+    function closeUncoveredDialog() {
+      document.getElementById('uncoveredDialog').close();
+    }
+
+    function showOverlapCandidates() {
+      if (!lastCompared.length) return alert('先に横並び比較をしてください');
+
+      const savedData = getSavedCandidates();
+      const rows = upperList.map((poke, idx) => {
+        const matched = lastCompared.filter(name => (savedData[name]?.checks || [])[idx]);
+        return { poke, idx, matched, count: matched.length };
+      }).filter(x => x.count >= 2)
+        .sort((a, b) => b.count - a.count || a.idx - b.idx);
+
+      const body = document.getElementById('overlapDialogBody');
+      body.innerHTML = rows.length
+        ? rows.map((row, i) => `${i + 1}. ${row.poke} — ${row.count}匹が対応: ${row.matched.join(' / ')}`).join('<br>')
+        : '6匹の中で、2匹以上にチェックが入っている上位ポケモンはありません。';
+
+      document.getElementById('overlapDialog').showModal();
+    }
+
+    function closeOverlapDialog() {
+      document.getElementById('overlapDialog').close();
     }
 
     function exportCSV() {
@@ -502,17 +635,20 @@
           const values = lines[i].split(',');
           const name = values[0];
           const tags = (values[1] || '').split('|').filter(Boolean);
-          saved[name] = { tags, checks: values.slice(2).map(v => v === 'true') };
+          saved[name] = {
+            tags,
+            checks: values.slice(2).map(v => v === 'true')
+          };
         }
         localStorage.setItem('teamCandidates', JSON.stringify(saved));
         updateSelect();
-        alert("CSVをインポートしました");
+        alert('CSVをインポートしました');
       };
       reader.readAsText(file);
     }
 
     function clearCurrent() {
-      if (confirm("現在のチェックをクリアしますか？")) {
+      if (confirm('現在のチェックをクリアしますか？')) {
         currentChecks.fill(false);
         renderCheckTable();
       }
@@ -526,8 +662,19 @@
         renderCheckTable();
         renderUpperPokemonSelect();
         updateSelect();
-        alert("ランキングを更新しました");
+        alert('ランキングを更新しました');
       }
+    }
+
+    function openTagDialog() {
+      const dialog = document.getElementById('tagDialog');
+      document.getElementById('tagDialogInfo').textContent = 'ここでタグを追加・削除できます。';
+      renderDialogTagList();
+      dialog.showModal();
+    }
+
+    function closeTagDialog() {
+      document.getElementById('tagDialog').close();
     }
 
     function escapeQuotes(str) {
