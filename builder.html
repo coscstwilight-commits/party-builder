@@ -586,22 +586,49 @@
     }
 
     function showOverlapCandidates() {
-      if (!lastCompared.length) return alert('先に横並び比較をしてください');
+  if (!lastCompared.length) return alert('先に横並び比較をしてください');
 
-      const savedData = getSavedCandidates();
-      const rows = upperList.map((poke, idx) => {
-        const matched = lastCompared.filter(name => (savedData[name]?.checks || [])[idx]);
-        return { poke, idx, matched, count: matched.length };
-      }).filter(x => x.count >= 2)
-        .sort((a, b) => b.count - a.count || a.idx - b.idx);
+  const savedData = getSavedCandidates();
+  const pairs = [];
 
-      const body = document.getElementById('overlapDialogBody');
-      body.innerHTML = rows.length
-        ? rows.map((row, i) => `${i + 1}. ${row.poke} — ${row.count}匹が対応: ${row.matched.join(' / ')}`).join('<br>')
-        : '6匹の中で、2匹以上にチェックが入っている上位ポケモンはありません。';
+  for (let i = 0; i < lastCompared.length; i++) {
+    for (let j = i + 1; j < lastCompared.length; j++) {
+      const a = lastCompared[i];
+      const b = lastCompared[j];
+      const checksA = savedData[a]?.checks || [];
+      const checksB = savedData[b]?.checks || [];
 
-      document.getElementById('overlapDialog').showModal();
+      const overlappedPokes = [];
+      upperList.forEach((poke, idx) => {
+        if (checksA[idx] && checksB[idx]) overlappedPokes.push(poke);
+      });
+
+      pairs.push({
+        a,
+        b,
+        count: overlappedPokes.length,
+        pokes: overlappedPokes
+      });
     }
+  }
+
+  pairs.sort((x, y) => y.count - x.count || x.a.localeCompare(y.a, 'ja'));
+
+  const body = document.getElementById('overlapDialogBody');
+
+  if (!pairs.length || pairs[0].count === 0) {
+    body.innerHTML = '6匹の中で、重複が多い組み合わせはありません。';
+  } else {
+    const lines = pairs
+      .filter(p => p.count > 0)
+      .map((p, i) => `${i + 1}. ${p.a} × ${p.b} — 重複 ${p.count}匹<br>${p.pokes.join(' / ')}`)
+      .join('<br><br>');
+    body.innerHTML = lines;
+  }
+
+  document.getElementById('overlapDialog').showModal();
+}
+
 
     function closeOverlapDialog() {
       document.getElementById('overlapDialog').close();
