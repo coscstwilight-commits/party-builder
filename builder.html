@@ -19,11 +19,7 @@
     .primary { background:#2563eb; color:white; }
     .delete { background:#ef4444; color:white; }
     .edit { background:#eab308; color:black; }
-    .popup { 
-      position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); 
-      background:white; padding:20px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.3); 
-      max-width:90%; z-index:1000; max-height:80%; overflow:auto;
-    }
+    .analysis { margin:20px 0; padding:15px; background:#fef3c7; border-radius:8px; line-height:1.6; }
   </style>
 </head>
 <body>
@@ -51,16 +47,16 @@
     <tbody></tbody>
   </table>
 
-  <h2>保存済み候補（Ctrl+クリックで複数選択・最大6）</h2>
+  <h2>保存済み候補（Ctrl+クリックで複数選択）</h2>
   <select id="candidateSelect" multiple size="10" style="width:100%; max-width:900px;"></select><br>
   <button class="primary" onclick="showComparison()" style="padding:12px 30px;">横並び比較</button>
+
+  <div id="analysis" class="analysis" style="display:none;"></div>
 
   <table id="compareTable" style="display:none; margin-top:20px;">
     <thead><tr id="compareHeader"></tr></thead>
     <tbody id="compareBody"></tbody>
   </table>
-
-  <div id="popup" class="popup" style="display:none;"></div>
 
   <script>
     let upperList = [];
@@ -218,7 +214,7 @@
     function showComparison() {
       const select = document.getElementById('candidateSelect');
       const selected = Array.from(select.selectedOptions).map(o => o.value);
-      if (selected.length === 0 || selected.length > 6) return alert("1〜6個選択してください");
+      if (selected.length === 0) return alert("比較したい候補をCtrl+クリックで選択してください");
 
       const savedData = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
       const header = document.getElementById('compareHeader');
@@ -253,36 +249,13 @@
       });
 
       // 分析
-      let analysis = '<strong>分析結果:</strong><br>';
-      let weakestIndex = 0;
-      let minCover = 999;
-
+      let analysisHTML = '<strong>分析結果:</strong><br>';
       selected.forEach((name, i) => {
-        analysis += `${name}: ${coverage[i]}体カバー<br>`;
-        if (coverage[i] < minCover) {
-          minCover = coverage[i];
-          weakestIndex = i;
-        }
+        analysisHTML += `${name}: ${coverage[i]}体カバー<br>`;
       });
-
-      // 役割薄い候補と独自カバー
-      const weakName = selected[weakestIndex];
-      analysis += `<br><strong>一番役割薄い: ${weakName} (${minCover}体)</strong><br>`;
-
-      // 独自カバー
-      analysis += `<strong>${weakName}だけが対応しているポケモン:</strong><br>`;
-      let uniqueList = [];
-      upperList.forEach((poke, i) => {
-        let count = 0;
-        selected.forEach((name, col) => {
-          if ((savedData[name] || [])[i]) count++;
-        });
-        if (count === 1 && (savedData[weakName] || [])[i]) uniqueList.push(poke);
-      });
-      analysis += uniqueList.length ? uniqueList.join(', ') : 'なし';
-
-      document.getElementById('analysis').innerHTML = analysis;
+      document.getElementById('analysis').innerHTML = analysisHTML;
       document.getElementById('analysis').style.display = 'block';
+
       document.getElementById('compareTable').style.display = 'table';
     }
 
