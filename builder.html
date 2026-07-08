@@ -22,13 +22,23 @@
     input[type="file"] { display:none; }
     .panel { background:white; padding:14px; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.08); margin-bottom:18px; }
     .small { font-size: 13px; color:#475569; }
-    .tag-list { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
-    .tag-item { display:flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:999px; background:#f8fafc; }
-    .tag-item input { margin:0; }
+    .tag-list { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; align-items:center; }
+    .tag-chip {
+      display:inline-flex; align-items:center; gap:6px;
+      padding:6px 10px; border-radius:999px;
+      background:#dbeafe; color:#1e3a8a; border:1px solid #93c5fd;
+      font-size:13px;
+    }
+    .tag-chip button {
+      margin:0; padding:0; width:18px; height:18px; line-height:18px;
+      border-radius:50%; background:#1e3a8a; color:white; font-size:12px;
+    }
+    .tag-input-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px; }
+    .tag-input-row input { padding:8px 10px; min-width:220px; }
     .filter-bar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
-    .hidden-row { display:none !important; }
-    .candidate-tag-line { font-size:12px; color:#64748b; margin-top:4px; }
+    .hidden-option { display:none !important; }
     .select-wrap { border:1px solid #cbd5e1; border-radius:10px; padding:10px; background:#fff; }
+    .candidate-tag-line { font-size:12px; color:#64748b; margin-top:4px; }
   </style>
 </head>
 <body>
@@ -43,7 +53,11 @@
   <div class="panel">
     <h2>候補の相性チェック</h2>
     <input type="text" id="candName" placeholder="候補名" style="width:320px;">
-    <div class="candidate-tag-line">候補タグを付けると、あとで横並び比較時にフィルタできます。</div>
+    <div class="candidate-tag-line">候補タグを自由追加できます。</div>
+    <div class="tag-input-row">
+      <input type="text" id="tagInput" placeholder="タグを入力してEnterで追加">
+      <button class="primary" onclick="addTag()">タグ追加</button>
+    </div>
     <div id="candidateTagArea" class="tag-list"></div>
     <button class="primary" onclick="saveCandidate()">💾 保存</button>
     <button class="edit" onclick="overwriteSelected()">✏️ 選択中を上書き</button>
@@ -101,7 +115,7 @@
   <script>
     let upperList = [];
     let currentChecks = [];
-    let candidateTags = ["スカーフ", "受け", "崩し", "起点作成", "高速", "先制技"];
+    let candidateTags = [];
     let lastCompared = [];
 
     const defaultRanking = `ガブリアス
@@ -211,16 +225,39 @@
       const area = document.getElementById('candidateTagArea');
       area.innerHTML = '';
       candidateTags.forEach(tag => {
-        const label = document.createElement('label');
-        label.className = 'tag-item';
-        label.innerHTML = `<input type="checkbox" class="candTag" value="${tag}"> ${tag}`;
-        area.appendChild(label);
+        const chip = document.createElement('span');
+        chip.className = 'tag-chip';
+        chip.innerHTML = `${tag} <button type="button" onclick="removeTag('${tag}')">×</button>`;
+        area.appendChild(chip);
       });
     }
 
-    function getSelectedCandidateTags() {
-      return Array.from(document.querySelectorAll('.candTag:checked')).map(el => el.value);
+    function addTag() {
+      const input = document.getElementById('tagInput');
+      const tag = input.value.trim();
+      if (!tag) return;
+      if (!candidateTags.includes(tag)) {
+        candidateTags.push(tag);
+        candidateTags.sort((a,b) => a.localeCompare(b, 'ja'));
+        renderTagArea();
+        applyCandidateFilter();
+      }
+      input.value = '';
+      input.focus();
     }
+
+    function removeTag(tag) {
+      candidateTags = candidateTags.filter(t => t !== tag);
+      renderTagArea();
+      applyCandidateFilter();
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.target && e.target.id === 'tagInput' && e.key === 'Enter') {
+        e.preventDefault();
+        addTag();
+      }
+    });
 
     function saveCandidate() {
       const name = document.getElementById('candName').value.trim();
@@ -232,7 +269,7 @@
       let saved = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
       saved[name] = {
         checks: currentChecks.slice(),
-        tags: getSelectedCandidateTags()
+        tags: candidateTags.slice()
       };
       localStorage.setItem('teamCandidates', JSON.stringify(saved));
       updateSelect();
@@ -243,9 +280,7 @@
       const select = document.getElementById('candidateSelect');
       const name = select.value;
       if (!name) return alert("上書きしたい候補を選択してください");
-      if (confirm(`「${name}」を上書きしますか？`)) {
-        saveToStorage(name);
-      }
+      if (confirm(`「${name}」を上書きしますか？`)) saveToStorage(name);
     }
 
     function deleteSelected() {
@@ -303,12 +338,8 @@
         .slice(0, 6);
     }
 
-    function getSelectedNames() {
-      return getVisibleSelectedCandidateNames();
-    }
-
     function showComparison() {
-      const selected = getSelectedNames();
+      const selected = getVisibleSelectedCandidateNames();
       if (selected.length === 0) return alert("比較したい候補を選択してください");
       lastCompared = selected.slice();
 
@@ -358,7 +389,7 @@
         targetIndices.forEach(idx => {
           if (checks[idx]) score++;
         });
-        return { name, score, tags: data.tags || [] };
+        return { name, score };
       }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'ja'));
 
       const max = scores.length ? scores[0].score : 0;
@@ -368,7 +399,7 @@
 
     function exportCSV() {
       const saved = JSON.parse(localStorage.getItem('teamCandidates') || '{}');
-      let csv = "候補名,タグ, " + upperList.join(",") + "\n";
+      let csv = "候補名,タグ," + upperList.join(",") + "\n";
       Object.keys(saved).forEach(name => {
         const tags = (saved[name].tags || []).join('|');
         csv += name + "," + tags + "," + (saved[name].checks || []).map(v => v ? 'true' : 'false').join(",") + "\n";
