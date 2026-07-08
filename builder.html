@@ -134,7 +134,8 @@
   <div class="panel">
     <h2>横並び比較の補助</h2>
     <button class="primary" onclick="showUncoveredDialog()" style="padding:12px 30px;">未対応ポケモン表示</button>
-    <button class="primary" onclick="showOverlapCandidates()" style="padding:12px 30px;">役割対象の重複が多い組み合わせ</button>
+    <button class="primary" onclick="showOverlapCandidates()" style="padding:12px 30px;">被りが多いペア表示</button>
+    <button class="primary" onclick="showUniqueRoleCounts()" style="padding:12px 30px;">固有役割対象数表示</button>
   </div>
 
   <div class="panel">
@@ -149,23 +150,6 @@
     <tbody id="compareBody"></tbody>
   </table>
 
-  <dialog id="tagDialog">
-    <div class="dialog-body">
-      <div class="dialog-header">
-        <div class="dialog-title">タグ管理</div>
-        <button class="dialog-close" onclick="closeTagDialog()">閉じる</button>
-      </div>
-      <div class="small" id="tagDialogInfo" style="margin-top:10px;"></div>
-      <div class="modal-section">
-        <div class="tag-input-row">
-          <input type="text" id="dialogTagInput" placeholder="タグ名">
-          <button class="primary" onclick="addTagFromDialog()">追加</button>
-        </div>
-        <div id="dialogTagList" class="tag-list"></div>
-      </div>
-    </div>
-  </dialog>
-
   <dialog id="uncoveredDialog">
     <div class="dialog-body">
       <div class="dialog-header">
@@ -179,10 +163,20 @@
   <dialog id="overlapDialog">
     <div class="dialog-body">
       <div class="dialog-header">
-        <div class="dialog-title">役割対象の重複が多い組み合わせ</div>
+        <div class="dialog-title">被りが多いペア</div>
         <button class="dialog-close" onclick="closeOverlapDialog()">閉じる</button>
       </div>
       <div id="overlapDialogBody" class="modal-list"></div>
+    </div>
+  </dialog>
+
+  <dialog id="uniqueDialog">
+    <div class="dialog-body">
+      <div class="dialog-header">
+        <div class="dialog-title">固有役割対象数</div>
+        <button class="dialog-close" onclick="closeUniqueDialog()">閉じる</button>
+      </div>
+      <div id="uniqueDialogBody" class="modal-list"></div>
     </div>
   </dialog>
 
@@ -335,7 +329,6 @@
       });
       renderCandidateTagButtons();
       renderFilterTagButtons();
-      renderDialogTagList();
     }
 
     function renderCandidateTagButtons() {
@@ -366,34 +359,8 @@
       });
     }
 
-    function renderDialogTagList() {
-      const area = document.getElementById('dialogTagList');
-      area.innerHTML = '';
-      savedTagLibrary.forEach(tag => {
-        const chip = document.createElement('span');
-        chip.className = 'tag-chip';
-        chip.innerHTML = `${tag} <button type="button" onclick="removeLibraryTag('${escapeQuotes(tag)}')">×</button>`;
-        area.appendChild(chip);
-      });
-      if (!savedTagLibrary.length) area.innerHTML = '<span class="small">タグがまだありません。</span>';
-    }
-
     function addLibraryTag() {
       const input = document.getElementById('newTagInput');
-      const tag = input.value.trim();
-      if (!tag) return;
-      if (!savedTagLibrary.includes(tag)) {
-        savedTagLibrary.push(tag);
-        savedTagLibrary = Array.from(new Set(savedTagLibrary)).sort((a,b) => a.localeCompare(b, 'ja'));
-        saveTagLibrary();
-        renderLibraryTags();
-      }
-      input.value = '';
-      input.focus();
-    }
-
-    function addTagFromDialog() {
-      const input = document.getElementById('dialogTagInput');
       const tag = input.value.trim();
       if (!tag) return;
       if (!savedTagLibrary.includes(tag)) {
@@ -586,52 +553,87 @@
     }
 
     function showOverlapCandidates() {
-  if (!lastCompared.length) return alert('先に横並び比較をしてください');
+      if (!lastCompared.length) return alert('先に横並び比較をしてください');
 
-  const savedData = getSavedCandidates();
-  const pairs = [];
+      const savedData = getSavedCandidates();
+      const pairs = [];
 
-  for (let i = 0; i < lastCompared.length; i++) {
-    for (let j = i + 1; j < lastCompared.length; j++) {
-      const a = lastCompared[i];
-      const b = lastCompared[j];
-      const checksA = savedData[a]?.checks || [];
-      const checksB = savedData[b]?.checks || [];
+      for (let i = 0; i < lastCompared.length; i++) {
+        for (let j = i + 1; j < lastCompared.length; j++) {
+          const a = lastCompared[i];
+          const b = lastCompared[j];
+          const checksA = savedData[a]?.checks || [];
+          const checksB = savedData[b]?.checks || [];
 
-      const overlappedPokes = [];
-      upperList.forEach((poke, idx) => {
-        if (checksA[idx] && checksB[idx]) overlappedPokes.push(poke);
-      });
+          const overlappedPokes = [];
+          upperList.forEach((poke, idx) => {
+            if (checksA[idx] && checksB[idx]) overlappedPokes.push(poke);
+          });
 
-      pairs.push({
-        a,
-        b,
-        count: overlappedPokes.length,
-        pokes: overlappedPokes
-      });
+          pairs.push({
+            a,
+            b,
+            count: overlappedPokes.length,
+            pokes: overlappedPokes
+          });
+        }
+      }
+
+      pairs.sort((x, y) => y.count - x.count || x.a.localeCompare(y.a, 'ja'));
+
+      const body = document.getElementById('overlapDialogBody');
+
+      if (!pairs.length || pairs[0].count === 0) {
+        body.innerHTML = '6匹の中で、重複が多い組み合わせはありません。';
+      } else {
+        const lines = pairs
+          .filter(p => p.count > 0)
+          .map((p, i) => `${i + 1}. ${p.a} × ${p.b} — 重複 ${p.count}匹<br>${p.pokes.join(' / ')}`)
+          .join('<br><br>');
+        body.innerHTML = lines;
+      }
+
+      document.getElementById('overlapDialog').showModal();
     }
-  }
-
-  pairs.sort((x, y) => y.count - x.count || x.a.localeCompare(y.a, 'ja'));
-
-  const body = document.getElementById('overlapDialogBody');
-
-  if (!pairs.length || pairs[0].count === 0) {
-    body.innerHTML = '6匹の中で、重複が多い組み合わせはありません。';
-  } else {
-    const lines = pairs
-      .filter(p => p.count > 0)
-      .map((p, i) => `${i + 1}. ${p.a} × ${p.b} — 重複 ${p.count}匹<br>${p.pokes.join(' / ')}`)
-      .join('<br><br>');
-    body.innerHTML = lines;
-  }
-
-  document.getElementById('overlapDialog').showModal();
-}
-
 
     function closeOverlapDialog() {
       document.getElementById('overlapDialog').close();
+    }
+
+    function showUniqueRoleCounts() {
+      if (!lastCompared.length) return alert('先に横並び比較をしてください');
+
+      const savedData = getSavedCandidates();
+      const uniqueCounts = lastCompared.map(name => ({ name, count: 0, pokes: [] }));
+
+      upperList.forEach((poke, idx) => {
+        const matched = lastCompared.filter(name => (savedData[name]?.checks || [])[idx]);
+        if (matched.length === 1) {
+          const onlyName = matched[0];
+          const target = uniqueCounts.find(x => x.name === onlyName);
+          if (target) {
+            target.count++;
+            target.pokes.push(poke);
+          }
+        }
+      });
+
+      uniqueCounts.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ja'));
+
+      const body = document.getElementById('uniqueDialogBody');
+      if (!uniqueCounts.length || uniqueCounts[0].count === 0) {
+        body.innerHTML = '固有で見れている上位ポケモンはありません。';
+      } else {
+        body.innerHTML = uniqueCounts
+          .map((x, i) => `${i + 1}. ${x.name} — 固有役割対象数 ${x.count}<br>${x.pokes.join(' / ')}`)
+          .join('<br><br>');
+      }
+
+      document.getElementById('uniqueDialog').showModal();
+    }
+
+    function closeUniqueDialog() {
+      document.getElementById('uniqueDialog').close();
     }
 
     function exportCSV() {
@@ -691,21 +693,6 @@
         updateSelect();
         alert('ランキングを更新しました');
       }
-    }
-
-    function openTagDialog() {
-      const dialog = document.getElementById('tagDialog');
-      document.getElementById('tagDialogInfo').textContent = 'ここでタグを追加・削除できます。';
-      renderDialogTagList();
-      dialog.showModal();
-    }
-
-    function closeTagDialog() {
-      document.getElementById('tagDialog').close();
-    }
-
-    function escapeQuotes(str) {
-      return String(str).replace(/'/g, "\\'");
     }
 
     loadRanking();
